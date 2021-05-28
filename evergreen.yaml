@@ -43,6 +43,7 @@ functions:
         AWS_ACCESS_KEY_ID: ${aws_key}
         AWS_SECRET_ACCESS_KEY: ${aws_secret}
         GOPATH: ${workdir}/gopath
+        CEDAR_DB_CREDS_FILE: ${workdir}/gopath/src/github.com/evergreen-ci/cedar/test_auth.yml
   set-up-mongodb:
     - command: subprocess.exec
       type: setup
@@ -66,9 +67,42 @@ functions:
     - command: subprocess.exec
       type: setup
       params:
+        working_dir: gopath/src/github.com/evergreen-ci/cedar/
+        add_expansions_to_env: true
+        command: make init-rs
+  set-up-mongodb-auth:
+    - command: subprocess.exec
+      type: setup
+      params:
         add_expansions_to_env: true
         working_dir: gopath/src/github.com/evergreen-ci/cedar/
+        command: make get-mongodb
+    - command: subprocess.exec
+      type: setup
+      params:
+        background: true
+        working_dir: gopath/src/github.com/evergreen-ci/cedar/
+        add_expansions_to_env: true
+        command: make start-mongod-auth
+    - command: subprocess.exec
+      type: setup
+      params:
+        working_dir: gopath/src/github.com/evergreen-ci/cedar/
+        add_expansions_to_env: true
+        command: make check-mongod
+    - command: subprocess.exec
+      type: setup
+      params:
+        working_dir: gopath/src/github.com/evergreen-ci/cedar/
+        add_expansions_to_env: true
         command: make init-rs
+    - command: subprocess.exec
+      type: setup
+      params:
+        working_dir: gopath/src/github.com/evergreen-ci/cedar/
+        add_expansions_to_env: true
+        command: make init-auth
+
   set-up-curator:
     - command: s3.get
       type: setup
@@ -132,6 +166,32 @@ tasks:
   - <<: *run-build
     tags: ["test"]
     name: test-perf
+  - name: test-auth
+    commands:
+      - func: get-project
+      - func: set-up-mongodb-auth
+      - func: set-up-curator
+      - func: run-make
+        vars: { target: "cedar" }
+      - func: run-make
+        vars: { target: "clean-results" }
+      - func: run-make
+        vars: 
+          target: "test-cedar"
+          RUN_TEST: "TestGlobalEnvironmentAuth"
+          TEST_USER_ADMIN: "myUserAdmin"
+      - func: run-make
+        vars: 
+          target: "test-cedar"
+          RUN_TEST: "TestDatabaseSessionAccessorAuth"
+          TEST_USER_ADMIN: "myUserAdmin"
+      - func: run-make
+        vars: 
+          target: "test-cedar"
+          RUN_TEST: "TestDatabaseSessionAccessorAuth"
+          TEST_USER_ADMIN: "myUserAdmin"
+      - func: run-make
+        vars: { target: "clean-results" }
 
   - <<: *run-build
     tags: ["lint"]
@@ -216,7 +276,7 @@ buildvariants:
       curator_build: ubuntu1604
     run_on:
       - archlinux-new-small
-    tasks: [ "testGroup" ]
+    tasks: [ "testGroup", test-auth ]
 
   - name: lint
     display_name: Lint (Arch Linux)
@@ -238,7 +298,7 @@ buildvariants:
       curator_build: ubuntu1604
     run_on:
       - ubuntu1604-test
-    tasks: [ "dist", "testGroup" ]
+    tasks: [ "dist", "testGroup", test-auth ]
 
   - name: macos
     display_name: macOS
